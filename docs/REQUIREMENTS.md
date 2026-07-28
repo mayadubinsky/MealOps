@@ -10,7 +10,7 @@ The user:
 - Does not need registration or authentication
 - Does not share the account or meal plan with other users
 
-# Dietary restrictions and preferences - Must have
+## Dietary restrictions and preferences - Must have
 The user can configure:
 - Allergies, such as peanuts or shellfish
 - Intolerances, such as lactose or gluten
@@ -54,26 +54,26 @@ The application can:
 - Associate the shopping list with its meal plan
 - Display ingredient names, quantities, and units
 
-# Schedule - Could have
+## Schedule - Could have
 The user can configure:
 - The day and time or automatic weekly plan generation
 - Preferred cooking or meal-preparation times
 Note: maximum preparation time belongs under dietary preferences; scheduled preparation time belongs here.
 
-# Meal editing and regeneration - Could have
+## Meal editing and regeneration - Could have
 The user can regenerate:
 - One specific meal
 - All meals for a specific day
 - The entire weekly plan
 Regenerated meals must still satisfy the saved restrictions.
 
-# Reminders and notification channel - Could have
+## Reminders and notification channel - Could have
 The user can configure:
 - A notification channel: Email or Telegram
 - When the weekly meal plan is delivered
 - When meal-preparation reminders are deleivered 
 
-# Security and privacy expectations - Must have
+## Security and privacy expectations - Must have
 Even the initial version must:
 - Keep API keys and credentials out of source control
 - Avoid writing secrets to logs
@@ -90,3 +90,20 @@ The initial version is successful when the user can:
 4. Generate a consolidated shopping list from that plan.
 5. Close and restart the application without losing the profile or generated plan.
 6. Complete the main workflow repeatedly without an unhandled error.
+
+## MVP
+The MVP allows a single user do the following:
+1. Select food restrictions and preferences.
+2. Keep those restrictions and preferences for the current session.
+3. Generate a seven-day meal plan based on those inputs.
+4. Generate a one combined shopping list from the meal plan.
+5. View the meal plan and shopping list.
+   
+The MVP will not support:
+1. User account or profile.
+2. persistent storage between sessions.
+3. Notifications or preparations reminders
+4. Multiple users
+5. Editing or regenerating individual meals
+
+**The MVP is complete when one user can enter preferences, generate a valid seven-day meal plan and shopping list, and view both during the same session.**
