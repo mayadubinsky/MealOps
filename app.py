@@ -1,14 +1,19 @@
-from collections import defaultdict
+# Type hints make request and response structures easier to understand.
 from typing import List
 
+# FastAPI serves the API and the HTML page.
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+# Gemini generates the meal plan and shopping list.
 from google import genai
 from google.genai import types
+# Pydantic validates incoming and generated data.
 from pydantic import BaseModel, Field
 
+# Create the web application.
 app = FastAPI(title="MealOps", description="AI-powered weekly meal planning")
+# Allow browser requests to reach the API.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,17 +22,20 @@ app.add_middleware(
 )
 
 
+# Validate the user's meal-plan preferences.
 class FoodRequest(BaseModel):
     res: str = Field(pattern="^(unrestricted|vegetarian|vegan)$")
     kosher: bool = False
     allergies: List[str] = []
 
 
+# Describe one recipe ingredient.
 class Ingredient(BaseModel):
     name: str
     quantity: str
 
 
+# Describe one complete meal.
 class Meal(BaseModel):
     name: str
     ingredients: List[Ingredient]
@@ -35,6 +43,7 @@ class Meal(BaseModel):
     time_minutes: int
 
 
+# Group the five meals for one day.
 class Day(BaseModel):
     day_number: int
     breakfast: Meal
@@ -44,26 +53,33 @@ class Day(BaseModel):
     dinner: Meal
 
 
+# Hold all days returned by Gemini.
 class MealPlan(BaseModel):
     days: List[Day]
 
 
+# Describe one consolidated shopping item.
 class ShoppingItem(BaseModel):
     name: str
     quantity: str
 
 
+# Hold the full shopping list.
 class ShoppingList(BaseModel):
     items: List[ShoppingItem]
 
 
 def get_client():
     """Create the client at request time so the UI can load without an API key."""
+    # Gemini reads GEMINI_API_KEY from the environment.
     return genai.Client()
 
 
 def gather_raw_ingredients(meal_plan: MealPlan) -> List[dict]:
+    """Flatten every meal's ingredients into one list."""
+    # Start with an empty collection.
     raw = []
+    # Visit each day and each meal.
     for day in meal_plan.days:
         for meal in (
             day.breakfast,
@@ -72,14 +88,18 @@ def gather_raw_ingredients(meal_plan: MealPlan) -> List[dict]:
             day.afternoon_snack,
             day.dinner,
         ):
+            # Add the meal's ingredients without changing their values.
             raw.extend(
                 {"name": ingredient.name, "quantity": ingredient.quantity}
                 for ingredient in meal.ingredients
             )
+    # Return the unmerged ingredient list.
     return raw
 
 
 def consolidate_shopping_list(client, raw_ingredients: List[dict]) -> ShoppingList:
+    """Ask Gemini to merge duplicate ingredients and quantities."""
+    # Request a response that matches ShoppingList exactly.
     response = client.models.generate_content(
         model="gemini-3.1-flash-lite",
         contents=(
@@ -97,25 +117,32 @@ def consolidate_shopping_list(client, raw_ingredients: List[dict]) -> ShoppingLi
             response_schema=ShoppingList,
         ),
     )
+    # Return Gemini's validated structured result.
     return response.parsed
 
 
+# Serve the browser interface at the site root.
 @app.get("/", response_class=HTMLResponse)
 def home():
     return HTMLResponse(UI_HTML)
 
 
+# Provide a lightweight server health check.
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
+# Generate a complete meal plan from submitted preferences.
 @app.post("/food")
 def choose_food(request: FoodRequest):
+    # Combine the diet and kosher choice for the prompt.
     restriction = f"{request.res}, kosher" if request.kosher else request.res
+    # Create an authenticated Gemini client.
     client = get_client()
 
     try:
+        # Ask Gemini for a structured seven-day plan.
         response = client.models.generate_content(
             model="gemini-3.1-flash-lite",
             contents=(
@@ -142,11 +169,13 @@ def choose_food(request: FoodRequest):
                 response_schema=MealPlan,
             ),
         )
+        # Read the validated plan and build its shopping list.
         meal_plan: MealPlan = response.parsed
         shopping_list = consolidate_shopping_list(
             client, gather_raw_ingredients(meal_plan)
         )
     except Exception as exc:
+        # Convert provider failures into a useful API error.
         raise HTTPException(
             status_code=502,
             detail=(
@@ -154,6 +183,7 @@ def choose_food(request: FoodRequest):
             ),
         ) from exc
 
+    # Send both generated sections back to the browser.
     return {
         "restriction": restriction,
         "meal_plan": meal_plan,
@@ -161,6 +191,7 @@ def choose_food(request: FoodRequest):
     }
 
 
+# Keep the small frontend in one file for simple local use.
 UI_HTML = r"""
 <!doctype html>
 <html lang="en">
@@ -168,6 +199,7 @@ UI_HTML = r"""
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>MealOps — Your week, planned</title>
+  <!-- Style the responsive form, meal cards, and shopping list. -->
   <style>
     :root{--ink:#193126;--muted:#64746c;--cream:#f5f2e9;--paper:#fffdf7;--sage:#dce8d7;--green:#285c43;--orange:#e97745;--line:#d9ddd3;--shadow:0 18px 55px rgba(36,59,46,.12)}
     *{box-sizing:border-box} body{margin:0;background:var(--cream);color:var(--ink);font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif}
@@ -187,6 +219,7 @@ UI_HTML = r"""
   </style>
 </head>
 <body>
+<!-- Collect preferences and display the generated plan. -->
 <main class="shell">
   <header><div class="brand"><div class="mark">◒</div>MealOps</div><div class="tag">Seven days. One smart shopping list.</div></header>
   <section class="hero">
@@ -213,11 +246,17 @@ UI_HTML = r"""
   </section>
 </main>
 <script>
+// Cache the page elements used during submission.
 const form=document.querySelector('#meal-form'),button=document.querySelector('#generate'),statusBox=document.querySelector('#status'),results=document.querySelector('#results');
+// Escape generated text before inserting it into HTML.
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Map API field names to readable meal labels.
 const labels={breakfast:'Breakfast',morning_snack:'Morning snack',lunch:'Lunch',afternoon_snack:'Afternoon snack',dinner:'Dinner'};
+// Build the HTML for one meal.
 function mealCard(type,m){const ingredients=m.ingredients.map(i=>`${esc(i.quantity)} ${esc(i.name)}`).join(' · ');return `<article class="meal"><div class="meal-top"><div><div class="meal-type">${labels[type]}</div><h4>${esc(m.name)}</h4></div><span class="time">◷ ${esc(m.time_minutes)} min</span></div><p class="ingredients">${ingredients}</p><p class="instructions">${esc(m.instructions)}</p></article>`}
+// Display the meal plan and shopping list returned by the API.
 function render(data){document.querySelector('#restriction').textContent=data.restriction;document.querySelector('#days').innerHTML=data.meal_plan.days.map((d,i)=>`<section class="day ${i===0?'open':''}"><div class="day-head" role="button" tabindex="0" aria-expanded="${i===0}"><h3>Day ${d.day_number}</h3><span>＋</span></div><div class="day-body">${Object.keys(labels).map(k=>mealCard(k,d[k])).join('')}</div></section>`).join('');document.querySelector('#shopping').innerHTML=data.shopping_list.items.map(i=>`<li><span>${esc(i.name)}</span><span class="qty">${esc(i.quantity)}</span></li>`).join('');document.querySelectorAll('.day-head').forEach(h=>{const toggle=()=>{h.parentElement.classList.toggle('open');h.setAttribute('aria-expanded',h.parentElement.classList.contains('open'))};h.onclick=toggle;h.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggle()}}});results.style.display='block';results.scrollIntoView({behavior:'smooth',block:'start'})}
+// Submit preferences, handle errors, and restore the button afterward.
 form.addEventListener('submit',async e=>{e.preventDefault();button.disabled=true;button.textContent='Planning your week…';statusBox.className='';statusBox.style.display='block';statusBox.textContent='Creating 35 meals and organizing your shopping list. This can take a minute.';results.style.display='none';const allergies=document.querySelector('#allergies').value.split(',').map(s=>s.trim()).filter(Boolean);try{const response=await fetch('/food',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({res:new FormData(form).get('res'),kosher:document.querySelector('#kosher').checked,allergies})});const raw=await response.text();let data;try{data=JSON.parse(raw)}catch{throw new Error(response.ok?'The server returned an unreadable response.':'The server failed to process the request. Check the terminal for details.')}if(!response.ok)throw new Error(data.detail||'Could not create your plan.');statusBox.style.display='none';render(data)}catch(err){statusBox.className='error';statusBox.textContent=err.message}finally{button.disabled=false;button.textContent='Create my week →'}});
 </script>
 </body></html>
