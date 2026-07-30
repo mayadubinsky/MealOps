@@ -11,6 +11,21 @@ from google import genai
 from google.genai import types
 # Pydantic validates incoming and generated data.
 from pydantic import BaseModel, Field
+# Read operating-system environment variables.
+import os
+# Configure application logging.
+import logging
+
+
+# Read the Gemini model name, or use this safe local default.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite",)
+# Read the logging level, or use INFO by default.
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+# Read the provider timeout in milliseconds, or use 30 seconds by default.
+PROVIDER_TIMEOUT_MS = int(os.getenv("PROVIDER_TIMEOUT_MS", "30000"))
+# Apply the selected logging level.
+logging.basicConfig(level=LOG_LEVEL)
+
 
 # Create the web application.
 app = FastAPI(title="MealOps", description="AI-powered weekly meal planning")
