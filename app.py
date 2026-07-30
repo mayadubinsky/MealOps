@@ -88,7 +88,7 @@ class ShoppingList(BaseModel):
 def get_client():
     """Create the client at request time so the UI can load without an API key."""
     # Gemini reads GEMINI_API_KEY from the environment.
-    return genai.Client()
+    return genai.Client(http_options=types.HttpOptions(timeout=PROVIDER_TIMEOUT_MS))
 
 
 def gather_raw_ingredients(meal_plan: MealPlan) -> List[dict]:
@@ -117,7 +117,7 @@ def consolidate_shopping_list(client, raw_ingredients: List[dict]) -> ShoppingLi
     """Ask Gemini to merge duplicate ingredients and quantities."""
     # Request a response that matches ShoppingList exactly.
     response = client.models.generate_content(
-        model="gemini-3.1-flash-lite",
+        model=GEMINI_MODEL,
         contents=(
             "Consolidate this raw ingredient list from a seven-day meal plan. "
             "Merge preparation variants and singular/plural forms:\n"
@@ -162,7 +162,7 @@ def choose_food(request: FoodRequest):
     try:
         # Ask Gemini for a structured seven-day plan.
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=GEMINI_MODEL,
             contents=(
                 f"Dietary restriction: {restriction}\n"
                 f"Kosher requested: {request.kosher}\n"
