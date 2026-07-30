@@ -11,6 +11,21 @@ from google import genai
 from google.genai import types
 # Pydantic validates incoming and generated data.
 from pydantic import BaseModel, Field
+# Read operating-system environment variables.
+import os
+# Configure application logging.
+import logging
+
+
+# Read the Gemini model name, or use this safe local default.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite",)
+# Read the logging level, or use INFO by default.
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+# Read the provider timeout in milliseconds, or use 30 seconds by default.
+PROVIDER_TIMEOUT_MS = int(os.getenv("PROVIDER_TIMEOUT_MS", "30000"))
+# Apply the selected logging level.
+logging.basicConfig(level=LOG_LEVEL)
+
 
 # Create the web application.
 app = FastAPI(title="MealOps", description="AI-powered weekly meal planning")
@@ -73,7 +88,7 @@ class ShoppingList(BaseModel):
 def get_client():
     """Create the client at request time so the UI can load without an API key."""
     # Gemini reads GEMINI_API_KEY from the environment.
-    return genai.Client()
+    return genai.Client(http_options=types.HttpOptions(timeout=PROVIDER_TIMEOUT_MS))
 
 
 def gather_raw_ingredients(meal_plan: MealPlan) -> List[dict]:
@@ -102,7 +117,7 @@ def consolidate_shopping_list(client, raw_ingredients: List[dict]) -> ShoppingLi
     """Ask Gemini to merge duplicate ingredients and quantities."""
     # Request a response that matches ShoppingList exactly.
     response = client.models.generate_content(
-        model="gemini-3.1-flash-lite",
+        model=GEMINI_MODEL,
         contents=(
             "Consolidate this raw ingredient list from a seven-day meal plan. "
             "Merge preparation variants and singular/plural forms:\n"
@@ -131,9 +146,13 @@ def home():
 
 
 # Provide a lightweight server health check.
-@app.get("/health")
+@app.get("/health/live")
 def health():
-    return {"status": "ok"}
+    return {"status": "alive"}
+
+@app.get("/health/ready")
+def readiness():
+    return {"status": "ready"}
 
 
 # Generate a complete meal plan from submitted preferences.
@@ -147,7 +166,7 @@ def choose_food(request: FoodRequest):
     try:
         # Ask Gemini for a structured seven-day plan.
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=GEMINI_MODEL,
             contents=(
                 f"Dietary restriction: {restriction}\n"
                 f"Kosher requested: {request.kosher}\n"
