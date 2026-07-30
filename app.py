@@ -146,9 +146,13 @@ def home():
 
 
 # Provide a lightweight server health check.
-@app.get("/health")
+@app.get("/health/live")
 def health():
-    return {"status": "ok"}
+    return {"status": "alive"}
+
+@app.get("/health/ready")
+def readiness():
+    return {"status": "ready"}
 
 
 # Generate a complete meal plan from submitted preferences.
