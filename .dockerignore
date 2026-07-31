@@ -1,0 +1,44 @@
+# Exclude Git metadata.
+.git/
+.gitignore
+
+# Exclude environment files and common secret files.
+.env
+.env.*
+*.pem
+*.key
+
+# Exclude Python-generated files.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Exclude local virtual environments.
+.venv/
+venv/
+env/
+
+# Exclude development-only content.
+tests/
+docs/
+requirements-dev.txt
+
+# Exclude temporary files and logs.
+tmp/
+temp/
+*.tmp
+*.log
+
+# Exclude editor configuration.
+.vscode/
+.idea/
+*.swp
+*~
+
+# Exclude operating-system artifacts.
+.DS_Store
+Thumbs.db

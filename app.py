@@ -15,7 +15,11 @@ from pydantic import BaseModel, Field
 import os
 # Configure application logging.
 import logging
+from contextlib import asynccontextmanager
 
+
+# Create a logger for MealOps operational events.
+logger = logging.getLogger("mealops")
 
 # Read the Gemini model name, or use this safe local default.
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite",)
@@ -26,9 +30,19 @@ PROVIDER_TIMEOUT_MS = int(os.getenv("PROVIDER_TIMEOUT_MS", "30000"))
 # Apply the selected logging level.
 logging.basicConfig(level=LOG_LEVEL)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Record that MealOps finished starting.
+    logger.info("MealOps application started")
+
+    yield
+
+    # Run during graceful shutdown, including container termination.
+    logger.info("MealOps application stopped")
+
 
 # Create the web application.
-app = FastAPI(title="MealOps", description="AI-powered weekly meal planning")
+app = FastAPI(title="MealOps", description="AI-powered weekly meal planning", lifespan=lifespan)
 # Allow browser requests to reach the API.
 app.add_middleware(
     CORSMiddleware,
@@ -196,14 +210,25 @@ def choose_food(request: FoodRequest):
         shopping_list = consolidate_shopping_list(
             client, gather_raw_ingredients(meal_plan)
         )
-    except Exception as exc:
-        # Convert provider failures into a useful API error.
+    except TimeoutError:
+        # Log the timeout without exposing secrets.
+        logger.warning("Gemini request timed out")
+
+        # Tell the client that the external provider took too long.
+        raise HTTPException(
+            status_code=504,
+            detail="The AI provider timed out. Please try again.",
+        )
+
+    except Exception:
+        # Log unexpected provider failures for investigation.
+        logger.exception("Gemini request failed")
+
+        # Return a safe message without internal error details.
         raise HTTPException(
             status_code=502,
-            detail=(
-                "Meal generation failed. Check that GEMINI_API_KEY is set, then try again."
-            ),
-        ) from exc
+            detail="Meal generation is temporarily unavailable. Please try again.",
+        )
 
     # Send both generated sections back to the browser.
     return {
