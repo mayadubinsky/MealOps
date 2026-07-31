@@ -1,0 +1,7 @@
+- Image: `mealops:latest`
+- Base image: Alpine-based Python image
+- Image size: 41 MB
+- Vulnerabilities: 0 critical, 0 high, 0 medium, 0 low
+- Runtime user: non-root
+- Policy score: 5/7, health score B (78%)
+- Remaining notices: copyleft licenses and missing local-build attestations
