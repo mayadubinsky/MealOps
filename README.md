@@ -9,7 +9,7 @@ app:
 
 ```powershell
 $env:GEMINI_API_KEY = "your-api-key"
-uvicorn app:app --reload
+uvicorn --app-dir "MealOps" app:app --reload 
 ```
 
 Open `http://127.0.0.1:8000`.
