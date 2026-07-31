@@ -13,3 +13,11 @@ uvicorn app:app --reload
 ```
 
 Open `http://127.0.0.1:8000`.
+
+## Updating dependencies
+
+1. Update one direct dependency at a time.
+2. Run the complete automated test suite.
+3. Test MealOps locally.
+4. Rebuild and test the Docker image.
+5. Record the verified version in the appropriate requirements file.
