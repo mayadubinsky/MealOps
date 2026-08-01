@@ -54,7 +54,7 @@ app.add_middleware(
 
 # Validate the user's meal-plan preferences.
 class FoodRequest(BaseModel):
-    res: str = Field(pattern="^(unrestricted|vegetarian|vegan)$")
+    restrictions: str = Field(pattern="^(unrestricted|vegetarian|vegan)$")
     kosher: bool = False
     allergies: List[str] = []
 
@@ -173,7 +173,7 @@ def readiness():
 @app.post("/food")
 def choose_food(request: FoodRequest):
     # Combine the diet and kosher choice for the prompt.
-    restriction = f"{request.res}, kosher" if request.kosher else request.res
+    restriction = f"{request.restrictions}, kosher" if request.kosher else request.restrictions
     # Create an authenticated Gemini client.
     client = get_client()
 

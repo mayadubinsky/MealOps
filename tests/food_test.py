@@ -92,7 +92,7 @@ def test_successful_meal_generation(monkeypatch):
     response = client.post(
         "/food",
         json={
-            "res": "vegetarian",
+            "restrictions": "vegetarian",
             "kosher": False,
             "allergies": [],
         },
@@ -112,7 +112,7 @@ def test_invalid_food_request_is_rejected():
     response = client.post(
         "/food",
         json={
-            "res": "pescatarian",
+            "restrictions": "pescatarian",
             "kosher": False,
             "allergies": [],
         },
@@ -127,7 +127,7 @@ def test_general_Gemini_error():
     response = client.post(
         "/food",
         json={
-            "res": "pescatarian",
+            "restrictions": "pescatarian",
             "kosher": False,
             "allergies": [],
         },
@@ -149,7 +149,7 @@ def test_provider_failure_returns_502(monkeypatch):
     response = client.post(
         "/food",
         json={
-            "res": "vegetarian",
+            "restrictions": "vegetarian",
             "kosher": False,
             "allergies": [],
         },
@@ -179,7 +179,7 @@ def test_invalid_provider_response_returns_502(monkeypatch):
     response = client.post(
         "/food",
         json={
-            "res": "vegetarian",
+            "restrictions": "vegetarian",
             "kosher": False,
             "allergies": [],
         },
