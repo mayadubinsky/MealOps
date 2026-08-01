@@ -21,7 +21,7 @@ Postman (API client)
 MealOps API
   |
   v
-OpenAI API
+Gemini API
   
 ## 4. Components
 
@@ -46,8 +46,8 @@ Responsibilities:
 
 1. The user sends dietary restrictions and preferences through Postman.
 2. The MealOps API validates the request.
-3. The MealOps API requests a weekly meal plan from the OpenAI API.
-4. The OpenAI API returns a structured meal plan and its recipes.
+3. The MealOps API requests a weekly meal plan from the Gemini API.
+4. The Gemini API returns a structured meal plan and its recipes.
 5. The MealOps API validates the response against a predefined schema.
 6. The MealOps API generates a combined shopping list from the validated recipes.
 7. The MealOps API returns the meal plan, recipes, and shopping list.
@@ -66,7 +66,7 @@ Submitting another request generates a new result.
 - The MVP supports one user.
 - Meal-plan generation is manual in the MVP.
 - The MVP has only API
-- The OpenAI API will be used as the AI provider
+- The Gemini API will be used as the AI provider
 - Recipes will be represented separately from the weekly meal-plan schedule 
 - API keys will be provided through environment variables using an uncommitted .env file. No secrets will be stored in source code or Git.
 - The MVP applies the simplified kosher rules defined in `REQUIREMENTS.md`.
