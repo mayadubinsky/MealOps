@@ -11,9 +11,38 @@ from google import genai
 from google.genai import types
 # Pydantic validates incoming and generated data.
 from pydantic import BaseModel, Field
+# Read operating-system environment variables.
+import os
+# Configure application logging.
+import logging
+from contextlib import asynccontextmanager
+
+
+# Create a logger for MealOps operational events.
+logger = logging.getLogger("mealops")
+
+# Read the Gemini model name, or use this safe local default.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite",)
+# Read the logging level, or use INFO by default.
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+# Read the provider timeout in milliseconds, or use 30 seconds by default.
+PROVIDER_TIMEOUT_MS = int(os.getenv("PROVIDER_TIMEOUT_MS", "30000"))
+# Apply the selected logging level.
+logging.basicConfig(level=LOG_LEVEL)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Record that MealOps finished starting.
+    logger.info("MealOps application started")
+
+    yield
+
+    # Run during graceful shutdown, including container termination.
+    logger.info("MealOps application stopped")
+
 
 # Create the web application.
-app = FastAPI(title="MealOps", description="AI-powered weekly meal planning")
+app = FastAPI(title="MealOps", description="AI-powered weekly meal planning", lifespan=lifespan)
 # Allow browser requests to reach the API.
 app.add_middleware(
     CORSMiddleware,
@@ -25,7 +54,7 @@ app.add_middleware(
 
 # Validate the user's meal-plan preferences.
 class FoodRequest(BaseModel):
-    res: str = Field(pattern="^(unrestricted|vegetarian|vegan)$")
+    restrictions: str = Field(pattern="^(unrestricted|vegetarian|vegan)$")
     kosher: bool = False
     allergies: List[str] = []
 
@@ -73,7 +102,7 @@ class ShoppingList(BaseModel):
 def get_client():
     """Create the client at request time so the UI can load without an API key."""
     # Gemini reads GEMINI_API_KEY from the environment.
-    return genai.Client()
+    return genai.Client(http_options=types.HttpOptions(timeout=PROVIDER_TIMEOUT_MS))
 
 
 def gather_raw_ingredients(meal_plan: MealPlan) -> List[dict]:
@@ -102,7 +131,7 @@ def consolidate_shopping_list(client, raw_ingredients: List[dict]) -> ShoppingLi
     """Ask Gemini to merge duplicate ingredients and quantities."""
     # Request a response that matches ShoppingList exactly.
     response = client.models.generate_content(
-        model="gemini-3.1-flash-lite",
+        model=GEMINI_MODEL,
         contents=(
             "Consolidate this raw ingredient list from a seven-day meal plan. "
             "Merge preparation variants and singular/plural forms:\n"
@@ -131,23 +160,27 @@ def home():
 
 
 # Provide a lightweight server health check.
-@app.get("/health")
+@app.get("/health/live")
 def health():
-    return {"status": "ok"}
+    return {"status": "alive"}
+
+@app.get("/health/ready")
+def readiness():
+    return {"status": "ready"}
 
 
 # Generate a complete meal plan from submitted preferences.
 @app.post("/food")
 def choose_food(request: FoodRequest):
     # Combine the diet and kosher choice for the prompt.
-    restriction = f"{request.res}, kosher" if request.kosher else request.res
+    restriction = f"{request.restrictions}, kosher" if request.kosher else request.restrictions
     # Create an authenticated Gemini client.
     client = get_client()
 
     try:
         # Ask Gemini for a structured seven-day plan.
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=GEMINI_MODEL,
             contents=(
                 f"Dietary restriction: {restriction}\n"
                 f"Kosher requested: {request.kosher}\n"
@@ -177,14 +210,25 @@ def choose_food(request: FoodRequest):
         shopping_list = consolidate_shopping_list(
             client, gather_raw_ingredients(meal_plan)
         )
-    except Exception as exc:
-        # Convert provider failures into a useful API error.
+    except TimeoutError:
+        # Log the timeout without exposing secrets.
+        logger.warning("Gemini request timed out")
+
+        # Tell the client that the external provider took too long.
+        raise HTTPException(
+            status_code=504,
+            detail="The AI provider timed out. Please try again.",
+        )
+
+    except Exception:
+        # Log unexpected provider failures for investigation.
+        logger.exception("Gemini request failed")
+
+        # Return a safe message without internal error details.
         raise HTTPException(
             status_code=502,
-            detail=(
-                "Meal generation failed. Check that GEMINI_API_KEY is set, then try again."
-            ),
-        ) from exc
+            detail="Meal generation is temporarily unavailable. Please try again.",
+        )
 
     # Send both generated sections back to the browser.
     return {
