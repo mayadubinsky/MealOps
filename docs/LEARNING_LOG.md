@@ -59,3 +59,64 @@
 - MealOps application.
 - pytest.
   
+- ## 31-07-2026 - Error handling, Docker
+
+- ### What I worked on
+
+- Containerize MealOps.
+- Improved error handling.
+- Add automated tests.
+- Validated container security.
+  
+- ### What I learned
+
+- "Exception" is a Python built-in class that catches most common application error.
+- SIGTERM is a signal sent from the OS to the application, telling it to stop, Uvicron tells FastAPI to stop.
+- Application tests shouldn't generally call a live AI. Their purpose is to check code validation.
+- It is important to mention the version number on the requirements file.
+- Docker scout is a Docker tool that looks for security problems.
+
+### What I tested
+
+- Writing application tests.
+- Gemini errors: timeout, no given answers and invalid answers.
+- User inputs invalid answer.
+- Building and running MealOps on Docker.
+- Docker scout for security problems.
+
+- ## 01-08-2026 - Azure and terraform basics
+
+- ### What I worked on
+
+- Creating Azure account.
+- Installed terraform and azure cli.
+- Learning the basics of Terraform and Azure.
+- Creating Resource Group, Storage Account, Blob Container.
+- Configured Terraform remote state.
+  
+- ### What I learned
+
+- A Service Principal is an Azure identity used by applications and automation to authenticate without a user.
+- A Provider allows terraform to communicate with external platforms such as Azure.
+- Resources are infrastructure objects managed by Terraform. Inside Terraform, each resource is identified by <resource_type>.<local_name>.
+- The basic terraform worklow is: init, plan, apply, destroy.
+- terraform.tfstate is a sate file that stores informtation anout the resources Terraform manage and maps your configuration to real infrastructure.
+- variables.tf defines the variables, while terraform.tfvars provides values for those variables.
+  This allows the same Terraform code to be reused for different environments (development, test, production).
+- Some Azure resource properties require replacement instead of an update.
+  For example, changing a Resource Group name causes Terraform to destroy and recreate it.
+- A Blob is Azure name for file.
+- A Blob Container is similar to a folder that stores blobs.
+- How to read terraform plan.
+- Azure Storage Account names must be globally unique.
+- Terraform automatically detects dependencies between resources when one resource references another (implicit dependencies).
+- Remote state allows multiple computers or team members to manage the same infrastructure.
+  
+### What I tested
+
+- Created and deleted a Resource Group.
+- Created a Storage Account.
+- Created a Blob Container.
+- Configured and verified Terraform remote state.
+- Used Terraform commands: init, plan, apply, destroy, state.
+  
