@@ -12,3 +12,18 @@ Thumbs.db
 
 __pycache__/
 *.py[cod]
+
+# Terraform state
+*.tfstate
+*.tfstate.*
+
+# Terraform cache
+.terraform/
+
+# Crash logs
+crash.log
+
+# Variable files with secrets
+*.auto.tfvars
+*.auto.tfvars.json
+terraform.tfvars
