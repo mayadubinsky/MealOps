@@ -17,3 +17,8 @@ variable "container_name" {
   description = "Blob container used for Terraform remote state"
   type        = string
 }
+
+variable "acr_name" {
+  description = "Azure Container Registery name"
+  type        = string
+}
