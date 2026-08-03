@@ -140,4 +140,5 @@
 - The `infra` module owns the application infrastructure (currently ACR).
 - The difference between an Azure resource name and Terraform's local resource name.
 - The difference between a Terraform resource and a data source.
+- Terraform root modules are independent projects. Each module has its own provider configuration, backend configuration, and state file.
 
