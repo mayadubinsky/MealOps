@@ -119,4 +119,25 @@
 - Created a Blob Container.
 - Configured and verified Terraform remote state.
 - Used Terraform commands: init, plan, apply, destroy, state.
+
+  ## 03-08-2026 - Bootstrap & Infra, ACR
+
+- ### What I worked on
+
+- Dividing my Terraform project into 2 modules: 'bootstrap' and 'infra'.
+- Created an Azure Container Registry (ACR).
   
+- ### What I learned
+
+- Terraform identifies resources by their resource address (e.g. `azurerm_resource_group.main`),
+  not only by their Azure name. If the address changes, Terraform may plan to destroy and recreate the resource.
+- The Terraform state file is stored remotely in Azure Blob Storage.
+- The `backend` block tells Terraform where to store and retrieve its state.
+- The `key` in the backend configuration is the name (or path) of the state file inside the Blob Container.
+- How to define a Terraform resource and reference it from other resources.
+- The difference between an input variable (`var`), a managed resource (`resource`), and a data source (`data`).
+- The `bootstrap` module owns the backend infrastructure (Resource Group, Storage Account, and Blob Container).
+- The `infra` module owns the application infrastructure (currently ACR).
+- The difference between an Azure resource name and Terraform's local resource name.
+- The difference between a Terraform resource and a data source.
+
