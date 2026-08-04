@@ -9,16 +9,16 @@
 - Installing git on windows.
 - Merging a branch.
 
-- ## 29-07-2026 - FastAPI, Gemini
+ ## 29-07-2026 - FastAPI, Gemini
 
-- ### What I worked on
+ ### What I worked on
 
 - Select an AI provider.
 - Create and work on phase 1 Jira Epic.
 - Connected a basic FastAPI endpoint to Gemini.
 - Explored Gemini’s free tier, API keys, quotas, and rate limits.
   
-- ### What I learned
+ ### What I learned
 
 - Gemini’s free tier is a practical option for learning and small projects.
 - Codex/ChatGPT tokens are separate from OpenAI API usage.
@@ -31,9 +31,9 @@
 - Sending an API request to my app.
 - Sending an API request to Gemini.
 
-- ## 30-07-2026 - API requests, Vibe coding and health checks 
+## 30-07-2026 - API requests, Vibe coding and health checks 
 
-- ### What I worked on
+ ### What I worked on
 
 - Improved and tested MealOps FastAPI application.
 - Sent JSON requests using Postman, PowerShell and curl.
@@ -42,7 +42,7 @@
 - Created and started working on the KAN-25 — Containerize MealOps Epic.
 - Added and ran automated tests with pytest and FastAPI TestClient.
   
-- ### What I learned
+ ### What I learned
 
 - Configuration such as GEMINI_MODEL, LOG_LEVEL, and PROVIDER_TIMEOUT_MS should come from environment variables.
   Also how to write it in a Python script.
@@ -58,17 +58,17 @@
 - Sending API requests with Postman.
 - MealOps application.
 - pytest.
-  
-- ## 31-07-2026 - Error handling, Docker
 
-- ### What I worked on
+## 31-07-2026 - Error handling, Docker
+
+ ### What I worked on
 
 - Containerize MealOps.
 - Improved error handling.
 - Add automated tests.
 - Validated container security.
   
-- ### What I learned
+ ### What I learned
 
 - "Exception" is a Python built-in class that catches most common application error.
 - SIGTERM is a signal sent from the OS to the application, telling it to stop, Uvicron tells FastAPI to stop.
@@ -84,9 +84,9 @@
 - Building and running MealOps on Docker.
 - Docker scout for security problems.
 
-- ## 01-08-2026 - Azure and terraform basics
+## 01-08-2026 - Azure and terraform basics
 
-- ### What I worked on
+ ### What I worked on
 
 - Creating Azure account.
 - Installed terraform and azure cli.
@@ -94,7 +94,7 @@
 - Creating Resource Group, Storage Account, Blob Container.
 - Configured Terraform remote state.
   
-- ### What I learned
+ ### What I learned
 
 - A Service Principal is an Azure identity used by applications and automation to authenticate without a user.
 - A Provider allows terraform to communicate with external platforms such as Azure.
@@ -120,14 +120,14 @@
 - Configured and verified Terraform remote state.
 - Used Terraform commands: init, plan, apply, destroy, state.
 
-  ## 03-08-2026 - Bootstrap & Infra, ACR
+## 03-08-2026 - Bootstrap & Infra, ACR
 
-- ### What I worked on
+ ### What I worked on
 
 - Dividing my Terraform project into 2 modules: 'bootstrap' and 'infra'.
 - Created an Azure Container Registry (ACR).
   
-- ### What I learned
+ ### What I learned
 
 - Terraform identifies resources by their resource address (e.g. `azurerm_resource_group.main`),
   not only by their Azure name. If the address changes, Terraform may plan to destroy and recreate the resource.
@@ -142,3 +142,33 @@
 - The difference between a Terraform resource and a data source.
 - Terraform root modules are independent projects. Each module has its own provider configuration, backend configuration, and state file.
 
+ ## 04-08-2026 - Azure Kubernetes Service (AKS)
+
+ ### What I worked on
+
+- Tagged and pushed the MealOps image to Azure Container Registry (ACR).
+- Created an Azure Kubernetes Service (AKS) cluster with Terraform.
+- Configured Azure RBAC to allow AKS to pull images from ACR.
+- Created Kubernetes Deployment and Service manifests for MealOps.
+- Deployed and ran MealOps on AKS.
+  
+ ### What I learned
+
+- Tagging an existing Docker image does not create another image;
+  it adds another tag that tell Docker where the image should be stored.
+- `terraform fmt` automatically formtas Terraform configuration files
+- `terraform validate` checks whether the terraform configuration is syntactically and logically valid
+- Azure automatically creates a separate Managed Cluster Resource Group (MC_...)
+  that contains the underlying infrastructure used by AKS (VM Scale Set, Load Balancer, Public IP, disks, etc.).
+- A Cluster Identity is used by Azure to manage the Kubernetes cluster itself.
+- Kubelet Identity is used by the worker nodes to get access to Azure resources, such as pulling images.
+- `kubelet_identity` is exposed by the Terraform Azure provider as a list, even though it typically contains only one identity.
+- The main Kubernetes Service types are ClusterIP, NodePort, LoadBalancer, and ExternalName
+- A Kubernetes manifest is a YAML file that declares the desired state of a Kubernetes resource.
+  
+ ### Challenges & Solutions
+  
+- AKS creation initially failed because the Standard_B2s VM size was not
+  available in my Azure subscription/region. I changed the node VM size to Standard_B2s_v2.
+- Interrupted terraform apply, which left the remote state locked.
+  Learned how Terraform state locking works and resolved it using terraform force-unlock.
