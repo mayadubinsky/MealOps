@@ -22,3 +22,14 @@ variable "acr_name" {
   description = "Azure Container Registery name"
   type        = string
 }
+
+variable "aks_name" {
+  description = "AKS cluster name"
+  type        = string
+}
+
+variable "aks_vm_size" {
+  description = "VM size for AKS nodes"
+  type        = string
+}
+
