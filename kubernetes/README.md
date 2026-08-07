@@ -42,3 +42,11 @@ The Deployment uses:
 
 - `/health/ready` for the readiness probe.
 - `/health/live` for the liveness probe.
+
+## AI API key
+
+Create the Kubernetes Secret before deploying:
+
+```bash
+kubectl create secret generic mealops-ai-secret \
+  --from-literal=GEMINI_API_KEY="<your-key>"

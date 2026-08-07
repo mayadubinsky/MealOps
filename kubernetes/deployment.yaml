@@ -26,6 +26,17 @@ spec:
           image: mealopsacr12345.azurecr.io/mealops:v1
           imagePullPolicy: IfNotPresent
 
+          env: 
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mealops-ai-secret
+                  key: GEMINI_API_KEY
+
+          envFrom:
+            - configMapRef:
+                name: mealops-config
+
           ports:
             - name: http
               containerPort: 8000
