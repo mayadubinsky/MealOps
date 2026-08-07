@@ -172,3 +172,46 @@
   available in my Azure subscription/region. I changed the node VM size to Standard_B2s_v2.
 - Interrupted terraform apply, which left the remote state locked.
   Learned how Terraform state locking works and resolved it using terraform force-unlock.
+
+## 07-08-2026 - Kubernetes Manifests Refactor, Health Checks, Secrets & ConfigMaps
+
+### What I worked on
+
+- Refactored Kubernetes Deployment and Service manifests.
+- Added standard labels to the Deployment and Service.
+- Added resource requests and limits.
+- Created a Kustomization file to apply multiple Kubernetes resources together.
+- Added readiness and liveness probes.
+- Created a Kubernetes Secret for the Gemini API key.
+- Created a ConfigMap for non-sensitive environment variables.
+
+### What I learned
+
+- `imagePullPolicy: IfNotPresent` pulls an image only if it does not already exist on the node. If an image with the same tag is cached, Kubernetes may use the cached version.
+- When choosing resource requests and limits for the first time, start with reasonable values, run the application, monitor its actual usage, and adjust them based on real data.
+- Kubernetes commonly uses binary memory units such as `Ki`, `Mi`, and `Gi`.
+- `1000m` CPU equals 1 CPU core.
+- `1 MiB` is about `1.05 MB`.
+- Reaching a CPU limit can cause CPU throttling, while exceeding a memory limit can cause the container to be terminated with `OOMKilled`.
+- The Kubernetes Scheduler decides which node a Pod should run on.
+- Kustomize is built into `kubectl` and allows multiple Kubernetes manifests to be managed and applied together.
+- `apiVersion` defines which Kubernetes API group and version should be used to interpret a resource.
+- `kubectl` uses the kubeconfig file to know which Kubernetes cluster to connect to and how to authenticate.
+- Docker CLI commands communicate with the Docker Engine.
+- Kubernetes creates a default `kubernetes` Service for access to the Kubernetes API server.
+- A Service endpoint represents the Pod IP and port that the Service can send traffic to.
+- A readiness probe checks whether a Pod is ready to receive traffic.
+- A liveness probe checks whether a container is healthy enough to keep running or should be restarted.
+- If a readiness probe fails, Kubernetes removes the Pod from the Service endpoints, so traffic is no longer sent to it.
+- When a Deployment is updated, Kubernetes usually performs a rolling update by creating new Pods before removing the old healthy ones.
+- Editing a Kubernetes manifest locally does not change the resource in the cluster until it is applied with `kubectl apply`.
+- `kubectl rollout restart` only restarts the Pods using the configuration that currently exists in the cluster; it does not apply changes from local YAML files.
+
+
+### Challenges & Solutions
+
+- After recreating the infrastructure with Terraform, the ACR was empty, so I had to push the Docker image again.
+- I received an `ImagePullBackOff` error after deployment. Kubernetes retried pulling the image and the Pod eventually started successfully.
+- My liveness probe used the wrong path (`/live` instead of `/health/live`), which caused the new Pod to enter `CrashLoopBackOff`. I found the issue using `kubectl describe pod`, corrected the path, and redeployed.
+- The application was not reachable at first because I tried to access it with HTTPS instead of HTTP. Using the LoadBalancer external IP with HTTP worked.
+- To test the ConfigMap behavior, I changed `PROVIDER_TIMEOUT_MS` to `300`. The Pod failed to start, so I changed it back to `30000` and ran `kubectl rollout restart deployment mealops`, but the application still did not recover. I entered the Pod using `kubectl exec` and checked the environment variable. I discovered that the Pod was still using the old timeout value. I realized that changing the local `configmap.yaml` file does not update the ConfigMap inside Kubernetes automatically. I first needed to run `kubectl apply -k .` to update the ConfigMap in the cluster, and only then restart the Deployment. After running `kubectl apply -k .` followed by `kubectl rollout restart deployment mealops`, the new Pod received the updated environment variable and started successfully.
