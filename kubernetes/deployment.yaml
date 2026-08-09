@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: mealops
-          image: mealopsacr12345.azurecr.io/mealops:v1
+          image: mealopsacr12345.azurecr.io/mealops:latest
           imagePullPolicy: IfNotPresent
 
           env: 
