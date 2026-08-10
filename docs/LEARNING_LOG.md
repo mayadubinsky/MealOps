@@ -287,3 +287,60 @@
 
 - **Challenge:** Using the same mutable `latest` image for dev and prod would make it unclear which application version each environment is running.
   - **Solution:** Decided that CI-built images will eventually use the Git commit SHA as the image tag, while Kustomize overlays will specify which exact image version each environment should run.
+
+ ## 10-08-2026 - GitHub Actions CI, Azure OIDC & ACR
+
+ ### What I worked on
+- Refactored start.ps1 so it no longer builds or pushes Docker images.
+- Changed the startup flow so ACR is treated as persistent infrastructure and AKS/runtime infrastructure is recreated daily.
+- Created my first GitHub Actions CI workflow for MealOps.
+- Configured the workflow to run only when a push is made to `main` or a `kan-*` branch and something under `app/**` was changed.
+- Configured GitHub Actions to build the MealOps Docker image from `app/Dockerfile`.
+- Changed the Docker image tagging strategy to use the Git commit SHA.
+- Created an App Registration and Service Principal for GitHub Actions.
+- Gave the Service Principal `AcrPush` permission on the MealOps ACR.
+- Configured OIDC authentication between GitHub Actions and Azure.
+- Created a GitHub `development` Environment for temporary `kan-*` branches.
+- Created separate Azure federated credentials for `development` and `main`.
+- Added Azure IDs as GitHub repository secrets.
+- Added Azure and ACR login to the CI workflow.
+- Configured CI to push commit-tagged Docker images to ACR.
+- Split the workflow into separate `build-dev` and `build-prod` jobs.
+- Verified that the image created by CI exists in ACR.
+
+ ### What I learned
+
+- GitHub Actions workflows are stored under `.github/workflows/`.
+- `runs-on: ubuntu-latest` means GitHub creates a temporary Ubuntu runner on which the job executes.
+- `actions/checkout` downloads the repository content to the runner.
+- `${{ github.sha }}` contains the Git commit SHA that triggered the workflow and can be used as an immutable Docker image tag.
+- An App Registration defines an application's identity in Microsoft Entra ID.
+- A Service Principal is the representation of that application inside a tenant and can receive Azure permissions.
+- A tenant is an organization's Microsoft Entra ID identity boundary, while an Azure subscription is mainly a resource and billing boundary.
+- One App Registration can have Service Principals in different tenants, while a Service Principal represents one application.
+- OIDC allows GitHub Actions to authenticate to Azure without storing a long-lived Azure client secret.
+- A Federated Credential tells Azure which external GitHub identity is trusted to authenticate as the application.
+- `contents: read` explicitly allows the workflow to read repository content.
+- `id-token: write` allows the workflow to request an OIDC token from GitHub.
+- Before explicitly defining `permissions`, GitHub can provide default `GITHUB_TOKEN` permissions, which is why `actions/checkout` worked before adding `contents: read`.
+- A GitHub Environment is a named context used by a job.
+- A branch does not automatically belong to an Environment; the workflow assigns the job to it with `environment: development`.
+- GitHub Environments can have their own security rules, secrets and OIDC identity.
+
+ ### Challenges and solutions
+
+- Challenge: start.ps1 stopped while waiting for Argo because kubectl get deployment returned NotFound.
+- Solution: Redirected the command output so the expected NotFound result does not terminate the PowerShell script, allowing the retry loop to continue.
+- Challenge: The first Argo-managed Pods could not start because the image was missing from ACR.
+- Solution: Pushed the required image to the persistent ACR and reran the startup script.
+- Challenge: The registry and infra Terraform folders originally used the same backend key, which mixed their Terraform state.
+- Solution: Gave the registry stack its own backend key so persistent ACR state is separate from disposable runtime infrastructure.
+- Challenge: Azure login initially failed with `AADSTS700016: Application with identifier was not found`.
+- Solution: Verified the App Registration and corrected the `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` GitHub secrets.
+- Challenge: After fixing the IDs, Azure returned `AADSTS700213: No matching federated identity record found`.
+- Cause: The OIDC `subject` stored in Azure did not exactly match the subject GitHub was actually sending.
+- Solution: Read the real subject from the GitHub Actions login output and recreated the federated credential with the exact immutable repository identifiers.
+- Challenge: Temporary branches such as `kan-43`, `kan-44`, etc. would require separate branch-based federated credentials.
+- Solution: Created a GitHub Environment called `development` and configured Azure to trust the environment instead of every individual temporary branch.
+- Challenge: Setting `environment: development` on the only build job would also make `main` use the development OIDC identity.
+- Solution: Split CI into separate `build-dev` and `build-prod` jobs so development and main can use different authentication contexts.
