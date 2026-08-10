@@ -5,24 +5,35 @@ on:
     branches:
       - main
       - "kan-*"
+    paths:
+      - "app/**"
 
   pull_request:
     branches:
       - main
+    paths:
+      - "app/**"
+
+# Permissions given to this GitHub Actions workflow.
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    environment: development
     steps:
-      # Download the repository onto the GitHub Actions runner.
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Build the Docker image.
-      #
-      # For now we only build it.
-      # We are NOT pushing anything to ACR yet.
       - name: Build Docker image
         run: |
           docker build -t mealops:${{ github.sha }} ./app
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}

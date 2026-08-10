@@ -1,0 +1,9 @@
+{
+  "name": "mealops-github-main",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:mayadubinsky/MealOps:ref:refs/heads/main",
+  "description": "GitHub Actions OIDC for MealOps main branch",
+  "audiences": [
+    "api://AzureADTokenExchange"
+  ]
+}
