@@ -17,7 +17,6 @@ import os
 import logging
 from contextlib import asynccontextmanager
 
-
 # Create a logger for MealOps operational events.
 logger = logging.getLogger("mealops")
 
