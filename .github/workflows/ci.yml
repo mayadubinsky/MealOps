@@ -1,0 +1,28 @@
+name: MealOps CI
+
+on:
+  push:
+    branches:
+      - main
+      - "kan-*"
+
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Download the repository onto the GitHub Actions runner.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Build the Docker image.
+      #
+      # For now we only build it.
+      # We are NOT pushing anything to ACR yet.
+      - name: Build Docker image
+        run: |
+          docker build -t mealops:${{ github.sha }} ./app
