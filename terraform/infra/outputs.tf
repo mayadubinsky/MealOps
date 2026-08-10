@@ -8,5 +8,5 @@ output "aks_name" {
 
 output "acr_login_server" {
   description = "Login server of the Azure Container Registry"
-  value       = azurerm_container_registry.mealops.login_server
+  value       = data.azurerm_container_registry.mealops.login_server
 }

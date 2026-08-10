@@ -6,19 +6,21 @@ $ErrorActionPreference = "Stop"
 # Paths
 # ============================================================
 
-# $PSScriptRoot is an automatic PowerShell variable containing
-# the directory of the currently running script.
+# $PSScriptRoot is an automatic PowerShell variable that
+# contains the directory where this script is located.
 #
 # Example:
 # C:\Users\maya\MealOps\scripts
 $ScriptsDir = $PSScriptRoot
 
-# Go one directory up to get the repository root.
+# Go one directory up to get the MealOps repository root.
+#
+# Result:
+# C:\Users\maya\MealOps
 $ProjectRoot = Split-Path -Parent $ScriptsDir
 
-# Terraform stacks.
-$RegistryDir = Join-Path $ProjectRoot "terraform\registry"
-$InfraDir    = Join-Path $ProjectRoot "terraform\infra"
+# Disposable Terraform infrastructure.
+$InfraDir = Join-Path $ProjectRoot "terraform\infra"
 
 # Argo CD Application manifests.
 $ProdApplicationFile = Join-Path `
@@ -29,53 +31,38 @@ $DevApplicationFile = Join-Path `
     $ProjectRoot `
     "argocd\mealops-dev-application.yaml"
 
-# Kustomize overlays.
-$ProdOverlayFile = Join-Path `
-    $ProjectRoot `
-    "kubernetes\overlays\prod\kustomization.yaml"
-
-$DevOverlayFile = Join-Path `
-    $ProjectRoot `
-    "kubernetes\overlays\dev\kustomization.yaml"
-
 
 # ============================================================
 # Configuration
 # ============================================================
 
-$ImageName = "mealops"
-
-# Temporary image used until CI starts creating commit-SHA tags.
-$BootstrapTag = "bootstrap"
-
-# Existing local image used only for first-time bootstrap.
-$LocalImage = "${ImageName}:latest"
-
 # Kubernetes resource names.
 $DeploymentName = "mealops"
-$ServiceName    = "mealops"
-$SecretName     = "mealops-ai-secret"
+$ServiceName = "mealops"
+$SecretName = "mealops-ai-secret"
 
-# Namespaces.
-$ProdNamespace  = "mealops-prod"
-$DevNamespace   = "mealops-dev"
-$ArgoNamespace  = "argocd"
+# Kubernetes namespaces.
+$ProdNamespace = "mealops-prod"
+$DevNamespace = "mealops-dev"
+$ArgoNamespace = "argocd"
 
-# Argo Applications.
+# Argo CD Application names.
 $ProdApplicationName = "mealops-prod"
-$DevApplicationName  = "mealops-dev"
+$DevApplicationName = "mealops-dev"
 
 # Official Argo CD installation manifest.
 $ArgoInstallUrl = `
     "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
 
-$TotalSteps = 10
+# Number of main startup steps.
+$TotalSteps = 8
 
 
 # ============================================================
 # Helper functions
 # ============================================================
 
+# Print the current startup step.
 function Write-Step {
     param (
         [int]$Number,
@@ -87,6 +74,7 @@ function Write-Step {
 }
 
 
+# Print a success message.
 function Write-Success {
     param (
         [string]$Message
@@ -96,7 +84,12 @@ function Write-Success {
 }
 
 
-# Create/update a namespace.
+# Create/update a Kubernetes namespace.
+#
+# dry-run + apply makes this idempotent:
+#
+# namespace missing -> create it
+# namespace exists  -> keep/update it
 function Ensure-Namespace {
     param (
         [string]$Namespace
@@ -118,7 +111,10 @@ function Ensure-Namespace {
 }
 
 
-# Create/update the MealOps Gemini Secret in a namespace.
+# Create/update the Gemini API Secret in a namespace.
+#
+# Secrets are namespace-scoped, so dev and prod each need
+# their own copy of mealops-ai-secret.
 function Ensure-MealOpsSecret {
     param (
         [string]$Namespace
@@ -153,31 +149,44 @@ function Wait-ForDeploymentCreation {
 
     for ($i = 1; $i -le 60; $i++) {
 
+        # Check whether the Deployment exists.
+        #
+        # Redirect both stdout and stderr so that a normal
+        # "NotFound" response does not stop the PowerShell script.
         kubectl get deployment $DeploymentName `
-            -n $Namespace *> $null
+            -n $Namespace `
+            *> $null
 
         if ($LASTEXITCODE -eq 0) {
+            Write-Host "      Deployment/$DeploymentName found."
             return
         }
 
         Write-Host `
-            "      Waiting for Argo CD Application '$ApplicationName'..."
+            "      Waiting for Argo CD Application '$ApplicationName' to create Deployment/$DeploymentName..."
 
         Start-Sleep -Seconds 5
     }
 
+    # If the Deployment still does not exist after 5 minutes,
+    # print useful Argo information before failing.
     Write-Host ""
-    Write-Host "Argo Application status:"
+    Write-Host "Argo CD Application status:"
 
     kubectl get application $ApplicationName `
         -n $ArgoNamespace `
         -o wide
 
-    throw "Argo did not create Deployment/$DeploymentName in '$Namespace'."
+    Write-Host ""
+    Write-Host "Argo CD Application details:"
+
+    kubectl describe application $ApplicationName `
+        -n $ArgoNamespace
+
+    throw "Argo CD did not create Deployment/$DeploymentName in namespace '$Namespace'."
 }
 
-
-# Wait for the Deployment rollout.
+# Wait until the MealOps Deployment becomes Ready.
 function Wait-ForMealOpsDeployment {
     param (
         [string]$Namespace
@@ -192,27 +201,47 @@ function Wait-ForMealOpsDeployment {
         return
     }
 
-    # A failed rollout doesn't necessarily mean the Deployment
-    # itself is wrong.
+    # If the rollout starts but the Pods do not become Ready,
+    # Kubernetes can eventually report that the Deployment
+    # exceeded its progress deadline.
     #
-    # Print debugging information first.
+    # Restart the Deployment so Kubernetes creates fresh Pods.
     Write-Host ""
-    Write-Host "Deployment did not become Ready in '$Namespace'."
-    Write-Host ""
+    Write-Host "      Rollout failed in '$Namespace'."
+    Write-Host "      Restarting Deployment..."
 
-    Write-Host "Pods:"
-    kubectl get pods -n $Namespace
+    kubectl rollout restart `
+        deployment/$DeploymentName `
+        -n $Namespace
 
-    Write-Host ""
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to restart Deployment in '$Namespace'."
+    }
 
-    Write-Host "Deployment:"
-    kubectl get deployment $DeploymentName -n $Namespace
+    Write-Host "      Waiting for restarted Deployment..."
 
-    throw "MealOps rollout failed in namespace '$Namespace'."
+    kubectl rollout status `
+        deployment/$DeploymentName `
+        -n $Namespace `
+        --timeout=300s
+
+    if ($LASTEXITCODE -ne 0) {
+
+        Write-Host ""
+        Write-Host "Pods in '$Namespace':"
+        kubectl get pods -n $Namespace
+
+        Write-Host ""
+        Write-Host "Deployment:"
+        kubectl get deployment $DeploymentName `
+            -n $Namespace
+
+        throw "MealOps Deployment failed in namespace '$Namespace'."
+    }
 }
 
 
-# Wait for a LoadBalancer external IP.
+# Wait for the public IP of a LoadBalancer Service.
 function Get-LoadBalancerIP {
     param (
         [string]$Namespace
@@ -252,6 +281,11 @@ Write-Host "========================================"
 # Validate Gemini API key
 # ============================================================
 
+# The API key must stay outside Git.
+#
+# Before running this script:
+#
+# $env:GEMINI_API_KEY="your-api-key"
 if (-not $env:GEMINI_API_KEY) {
 
     Write-Host ""
@@ -276,32 +310,28 @@ if (-not (Test-Path $DevApplicationFile)) {
     throw "Missing file: $DevApplicationFile"
 }
 
-if (-not (Test-Path $ProdOverlayFile)) {
-    throw "Missing file: $ProdOverlayFile"
-}
-
-if (-not (Test-Path $DevOverlayFile)) {
-    throw "Missing file: $DevOverlayFile"
-}
-
 
 # ============================================================
 # Determine current development branch
 # ============================================================
 
+# Prod always follows main.
+#
+# Dev follows whichever feature branch is currently checked
+# out locally.
+#
+# Argo CD reads from the REMOTE Git repository, so the branch
+# must already exist on origin.
 Push-Location $ProjectRoot
 
 $DevBranch = git branch --show-current
 
 if ($LASTEXITCODE -ne 0 -or -not $DevBranch) {
     Pop-Location
-    throw "Could not determine current Git branch."
+    throw "Could not determine the current Git branch."
 }
 
 
-# Argo reads the REMOTE repository, not your local files.
-#
-# Make sure the current branch exists on origin.
 $RemoteBranch = git ls-remote `
     --heads `
     origin `
@@ -312,14 +342,16 @@ if ($LASTEXITCODE -ne 0) {
     throw "Could not query Git origin."
 }
 
+
 if (-not $RemoteBranch) {
 
     Pop-Location
 
     Write-Host ""
+    Write-Host "ERROR:"
     Write-Host "Branch '$DevBranch' does not exist on origin."
     Write-Host ""
-    Write-Host "Push it first:"
+    Write-Host "Push it first with:"
     Write-Host "git push -u origin $DevBranch"
 
     exit 1
@@ -329,151 +361,21 @@ Pop-Location
 
 
 Write-Host ""
-Write-Host "DEV branch: $DevBranch"
+Write-Host "GitOps:"
+Write-Host "      PROD -> main"
+Write-Host "      DEV  -> $DevBranch"
 
 
 # ============================================================
-# 1. Create / verify persistent ACR
+# 1. Create disposable Azure infrastructure
 # ============================================================
 
-Write-Step 1 "Creating or verifying persistent ACR..."
-
-Push-Location $RegistryDir
-
-
-# registry has its own Terraform state.
-terraform init
-
-if ($LASTEXITCODE -ne 0) {
-    Pop-Location
-    throw "terraform init failed for registry."
-}
-
-
-# First run:
-#   creates ACR.
-#
-# Future mornings:
-#   should normally return No changes.
-terraform apply -auto-approve
-
-if ($LASTEXITCODE -ne 0) {
-    Pop-Location
-    throw "terraform apply failed for registry."
-}
-
-
-# Read ACR information from the registry stack.
-$AcrName = terraform output -raw acr_name
-
-if (-not $AcrName) {
-    Pop-Location
-    throw "Terraform registry output 'acr_name' is empty."
-}
-
-
-# Prefer Terraform's login_server output if you created it.
-$AcrLoginServer = terraform output -raw acr_login_server
-
-if (-not $AcrLoginServer) {
-    Pop-Location
-    throw "Terraform registry output 'acr_login_server' is empty."
-}
-
-
-Pop-Location
-
-
-Write-Host "      ACR:          $AcrName"
-Write-Host "      Login server: $AcrLoginServer"
-
-Write-Success "Persistent ACR ready"
-
-
-# ============================================================
-# 2. Bootstrap initial image when needed
-# ============================================================
-
-Write-Step 2 "Checking bootstrap image..."
-
-
-# Once CI exists, your overlays will contain commit SHA tags.
-#
-# Until then, both overlays can use:
-#
-# newTag: bootstrap
-#
-# If neither overlay uses bootstrap anymore, this entire
-# section does nothing.
-$ProdOverlayContent = Get-Content $ProdOverlayFile -Raw
-$DevOverlayContent  = Get-Content $DevOverlayFile -Raw
-
-$BootstrapRequired = `
-    ($ProdOverlayContent -match "newTag:\s*$BootstrapTag") -or `
-    ($DevOverlayContent -match "newTag:\s*$BootstrapTag")
-
-
-if ($BootstrapRequired) {
-
-    # Until CI exists, we need a first image in the new ACR.
-    #
-    # We use the already-tested local mealops:latest image.
-    docker image inspect $LocalImage *> $null
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "Bootstrap requires local Docker image '$LocalImage'."
-    }
-
-
-    Write-Host "      Bootstrap image is still used by Kustomize."
-    Write-Host "      Pushing local image as '$BootstrapTag'..."
-
-
-    az acr login --name $AcrName
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "ACR login failed."
-    }
-
-
-    $BootstrapImage = `
-        "${AcrLoginServer}/${ImageName}:${BootstrapTag}"
-
-
-    docker tag `
-        $LocalImage `
-        $BootstrapImage
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to tag bootstrap image."
-    }
-
-
-    docker push $BootstrapImage
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to push bootstrap image."
-    }
-
-
-    Write-Success "Bootstrap image pushed"
-}
-else {
-
-    Write-Host "      Kustomize is using versioned images."
-    Write-Host "      Bootstrap image not required."
-}
-
-
-# ============================================================
-# 3. Create disposable Azure infrastructure
-# ============================================================
-
-Write-Step 3 "Creating AKS runtime infrastructure..."
+Write-Step 1 "Creating AKS runtime infrastructure..."
 
 Push-Location $InfraDir
 
 
+# Initialize Terraform backend/providers.
 terraform init
 
 if ($LASTEXITCODE -ne 0) {
@@ -482,6 +384,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 
+# Create the disposable runtime infrastructure.
+#
+# ACR is NOT part of this Terraform state anymore.
 terraform apply -auto-approve
 
 if ($LASTEXITCODE -ne 0) {
@@ -490,9 +395,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 
-# Read the disposable infrastructure information.
+# Read values from Terraform outputs.
 $AksName = terraform output -raw aks_name
-
 $ResourceGroup = terraform output -raw resource_group_name
 
 
@@ -513,16 +417,17 @@ Pop-Location
 Write-Host "      AKS:            $AksName"
 Write-Host "      Resource Group: $ResourceGroup"
 
-Write-Success "AKS infrastructure created"
+Write-Success "AKS runtime infrastructure created"
 
 
 # ============================================================
-# 4. Connect kubectl to AKS
+# 2. Connect kubectl to AKS
 # ============================================================
 
-Write-Step 4 "Connecting kubectl to AKS..."
+Write-Step 2 "Connecting kubectl to AKS..."
 
 
+# Retrieve credentials for the newly created AKS cluster.
 az aks get-credentials `
     --resource-group $ResourceGroup `
     --name $AksName `
@@ -533,6 +438,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 
+# Verify that kubectl can communicate with AKS.
 kubectl cluster-info
 
 if ($LASTEXITCODE -ne 0) {
@@ -544,10 +450,10 @@ Write-Success "Connected to AKS"
 
 
 # ============================================================
-# 5. Create namespaces
+# 3. Create Kubernetes namespaces
 # ============================================================
 
-Write-Step 5 "Creating Kubernetes namespaces..."
+Write-Step 3 "Creating Kubernetes namespaces..."
 
 
 Ensure-Namespace $ProdNamespace
@@ -559,35 +465,34 @@ Write-Success "Namespaces ready"
 
 
 # ============================================================
-# 6. Create Secrets
+# 4. Create MealOps Secrets
 # ============================================================
 
-Write-Step 6 "Creating MealOps Secrets..."
+Write-Step 4 "Creating MealOps Kubernetes Secrets..."
 
 
-# Secrets are namespace-scoped.
-#
-# Prod and dev each need their own Secret.
 Ensure-MealOpsSecret $ProdNamespace
 Ensure-MealOpsSecret $DevNamespace
 
 
-Write-Success "Secrets ready"
+Write-Success "MealOps Secrets ready"
 
 
 # ============================================================
-# 7. Install Argo CD
+# 5. Install Argo CD
 # ============================================================
 
-Write-Step 7 "Installing Argo CD..."
+Write-Step 5 "Installing Argo CD..."
 
 
 # Server-side apply means the Kubernetes API server performs
 # the apply operation and tracks field ownership.
 #
-# This avoids the huge client-side
-# kubectl.kubernetes.io/last-applied-configuration annotation
-# that caused the Argo CRD size error previously.
+# We use it here because Argo CD contains large CRDs.
+# Normal client-side apply stores the previous configuration
+# in the kubectl.kubernetes.io/last-applied-configuration
+# annotation, which caused the 262144-byte annotation limit
+# error with the ApplicationSet CRD.
 kubectl apply `
     --server-side `
     -n $ArgoNamespace `
@@ -598,7 +503,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 
-# Wait until the Application CRD exists.
+# Wait until Kubernetes registers the Argo Application CRD.
+Write-Host ""
+Write-Host "      Waiting for Argo CD Application CRD..."
+
 kubectl wait `
     --for=condition=Established `
     crd/applications.argoproj.io `
@@ -609,9 +517,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 
+# Wait for Argo CD Deployments.
 Write-Host ""
 Write-Host "      Waiting for Argo CD Deployments..."
-
 
 kubectl wait `
     --for=condition=Available `
@@ -622,13 +530,15 @@ kubectl wait `
 
 if ($LASTEXITCODE -ne 0) {
 
+    Write-Host ""
+    Write-Host "Argo CD pods:"
     kubectl get pods -n $ArgoNamespace
 
     throw "Argo CD Deployments did not become ready."
 }
 
 
-# The Argo Application Controller is a StatefulSet.
+# The Application Controller runs as a StatefulSet.
 kubectl rollout status `
     statefulset/argocd-application-controller `
     -n $ArgoNamespace `
@@ -636,35 +546,37 @@ kubectl rollout status `
 
 if ($LASTEXITCODE -ne 0) {
 
+    Write-Host ""
+    Write-Host "Argo CD pods:"
     kubectl get pods -n $ArgoNamespace
 
-    throw "Argo Application Controller did not become ready."
+    throw "Argo CD Application Controller did not become ready."
 }
 
 
-Write-Success "Argo CD ready"
+Write-Success "Argo CD installed and ready"
 
 
 # ============================================================
-# 8. Create prod + dev Argo Applications
+# 6. Create prod and dev Argo CD Applications
 # ============================================================
 
-Write-Step 8 "Creating Argo CD Applications..."
+Write-Step 6 "Creating MealOps Argo CD Applications..."
 
 
 # ------------------------------------------------------------
 # PROD
 # ------------------------------------------------------------
 #
-# The prod manifest is static:
+# The prod Application manifest should contain:
 #
-# branch: main
+# targetRevision: main
 # path: kubernetes/overlays/prod
 # namespace: mealops-prod
 kubectl apply -f $ProdApplicationFile
 
 if ($LASTEXITCODE -ne 0) {
-    throw "Failed to create prod Argo Application."
+    throw "Failed to create MealOps prod Argo Application."
 }
 
 
@@ -675,21 +587,21 @@ Write-Host "      PROD -> main"
 # DEV
 # ------------------------------------------------------------
 #
-# The dev manifest contains:
+# The dev Application manifest should contain:
 #
 # targetRevision: BRANCH_PLACEHOLDER
 #
-# Replace the placeholder IN MEMORY with the branch that is
-# currently checked out locally.
+# The placeholder is replaced IN MEMORY with the branch that
+# is currently checked out.
 #
-# The YAML file itself is not changed.
+# The file itself is not modified.
 $DevApplicationYaml = Get-Content `
     $DevApplicationFile `
     -Raw
 
 
 if (-not $DevApplicationYaml.Contains("BRANCH_PLACEHOLDER")) {
-    throw "Dev Argo manifest is missing BRANCH_PLACEHOLDER."
+    throw "Dev Argo Application manifest is missing BRANCH_PLACEHOLDER."
 }
 
 
@@ -702,20 +614,20 @@ $DevApplicationYaml = $DevApplicationYaml.Replace(
 $DevApplicationYaml | kubectl apply -f -
 
 if ($LASTEXITCODE -ne 0) {
-    throw "Failed to create dev Argo Application."
+    throw "Failed to create MealOps dev Argo Application."
 }
 
 
 Write-Host "      DEV  -> $DevBranch"
 
-Write-Success "Argo Applications created"
+Write-Success "Argo CD Applications created"
 
 
 # ============================================================
-# 9. Wait for MealOps
+# 7. Wait for Argo CD to deploy MealOps
 # ============================================================
 
-Write-Step 9 "Waiting for Argo CD to deploy MealOps..."
+Write-Step 7 "Waiting for Argo CD to deploy prod and dev..."
 
 
 # ------------------------------------------------------------
@@ -723,16 +635,18 @@ Write-Step 9 "Waiting for Argo CD to deploy MealOps..."
 # ------------------------------------------------------------
 
 Write-Host ""
-Write-Host "      Waiting for PROD..."
+Write-Host "      Waiting for PROD Deployment..."
 
 Wait-ForDeploymentCreation `
     $ProdNamespace `
     $ProdApplicationName
 
+
 Wait-ForMealOpsDeployment `
     $ProdNamespace
 
-Write-Success "PROD ready"
+
+Write-Success "MealOps PROD is ready"
 
 
 # ------------------------------------------------------------
@@ -740,23 +654,25 @@ Write-Success "PROD ready"
 # ------------------------------------------------------------
 
 Write-Host ""
-Write-Host "      Waiting for DEV..."
+Write-Host "      Waiting for DEV Deployment..."
 
 Wait-ForDeploymentCreation `
     $DevNamespace `
     $DevApplicationName
 
+
 Wait-ForMealOpsDeployment `
     $DevNamespace
 
-Write-Success "DEV ready"
+
+Write-Success "MealOps DEV is ready"
 
 
 # ============================================================
-# 10. Wait for LoadBalancer IPs
+# 8. Wait for LoadBalancer IPs
 # ============================================================
 
-Write-Step 10 "Waiting for LoadBalancer IPs..."
+Write-Step 8 "Waiting for LoadBalancer external IPs..."
 
 
 Write-Host ""
@@ -783,12 +699,20 @@ Write-Host "          MealOps is running"
 Write-Host "========================================"
 
 
+# ------------------------------------------------------------
+# Argo CD Applications
+# ------------------------------------------------------------
+
 Write-Host ""
 Write-Host "Argo CD Applications:"
 
 kubectl get applications `
     -n $ArgoNamespace
 
+
+# ------------------------------------------------------------
+# PROD
+# ------------------------------------------------------------
 
 Write-Host ""
 Write-Host "PROD Pods:"
@@ -798,6 +722,17 @@ kubectl get pods `
 
 
 Write-Host ""
+Write-Host "PROD Services:"
+
+kubectl get services `
+    -n $ProdNamespace
+
+
+# ------------------------------------------------------------
+# DEV
+# ------------------------------------------------------------
+
+Write-Host ""
 Write-Host "DEV Pods:"
 
 kubectl get pods `
@@ -805,15 +740,25 @@ kubectl get pods `
 
 
 Write-Host ""
+Write-Host "DEV Services:"
+
+kubectl get services `
+    -n $DevNamespace
+
+
+# ------------------------------------------------------------
+# GitOps sources
+# ------------------------------------------------------------
+
+Write-Host ""
 Write-Host "GitOps sources:"
 Write-Host "      PROD -> main"
 Write-Host "      DEV  -> $DevBranch"
 
 
-Write-Host ""
-Write-Host "Container Registry:"
-Write-Host "      $AcrLoginServer"
-
+# ------------------------------------------------------------
+# URLs
+# ------------------------------------------------------------
 
 Write-Host ""
 Write-Host "========================================"
@@ -825,7 +770,7 @@ if ($ProdExternalIP) {
 
     Write-Host ""
     Write-Host "PROD:"
-    Write-Host "http://${ProdExternalIP}:8000"
+    Write-Host "http://${ProdExternalIP}"
 
 }
 else {
@@ -840,7 +785,7 @@ if ($DevExternalIP) {
 
     Write-Host ""
     Write-Host "DEV:"
-    Write-Host "http://${DevExternalIP}:8000"
+    Write-Host "http://${DevExternalIP}"
 
 }
 else {
@@ -849,7 +794,45 @@ else {
     Write-Host "DEV:"
     Write-Host "External IP is not available yet."
 }
+# ============================================================
+# Argo CD login information
+# ============================================================
 
+# A fresh Argo CD installation generates an initial password
+# for the built-in "admin" user.
+#
+# The password is stored in the Kubernetes Secret:
+#
+# argocd-initial-admin-secret
+#
+# Kubernetes Secrets store their values as Base64, so we:
+# 1. Read the password field from the Secret.
+# 2. Decode it from Base64 into normal text.
+
+Write-Host ""
+Write-Host "========================================"
+Write-Host "          Argo CD Login"
+Write-Host "========================================"
+
+$ArgoPasswordBase64 = kubectl get secret `
+    argocd-initial-admin-secret `
+    -n $ArgoNamespace `
+    -o jsonpath='{.data.password}'
+
+if ($LASTEXITCODE -eq 0 -and $ArgoPasswordBase64) {
+
+    $ArgoPassword = [System.Text.Encoding]::UTF8.GetString(
+        [System.Convert]::FromBase64String($ArgoPasswordBase64)
+    )
+
+    Write-Host ""
+    Write-Host "Username: admin"
+    Write-Host "Password: $ArgoPassword"
+}
+else {
+    Write-Host ""
+    Write-Host "Could not retrieve the Argo CD initial admin password."
+}
 
 Write-Host ""
 Write-Host "========================================"
