@@ -215,3 +215,75 @@
 - My liveness probe used the wrong path (`/live` instead of `/health/live`), which caused the new Pod to enter `CrashLoopBackOff`. I found the issue using `kubectl describe pod`, corrected the path, and redeployed.
 - The application was not reachable at first because I tried to access it with HTTPS instead of HTTP. Using the LoadBalancer external IP with HTTP worked.
 - To test the ConfigMap behavior, I changed `PROVIDER_TIMEOUT_MS` to `300`. The Pod failed to start, so I changed it back to `30000` and ran `kubectl rollout restart deployment mealops`, but the application still did not recover. I entered the Pod using `kubectl exec` and checked the environment variable. I discovered that the Pod was still using the old timeout value. I realized that changing the local `configmap.yaml` file does not update the ConfigMap inside Kubernetes automatically. I first needed to run `kubectl apply -k .` to update the ConfigMap in the cluster, and only then restart the Deployment. After running `kubectl apply -k .` followed by `kubectl rollout restart deployment mealops`, the new Pod received the updated environment variable and started successfully.
+
+
+## 09-08-2026 - GitOps with Argo CD and Multiple Kubernetes Environments
+
+### What I worked on
+- Created a PowerShell `start.ps1` script to automate the daily startup of the MealOps environment.
+- Created a PowerShell `stop.ps1` script to automate Terraform destroy at the end of the day.
+- Automated the startup flow:
+  - `terraform init`
+  - `terraform apply`
+  - Read AKS, ACR, and Resource Group names from Terraform outputs.
+  - Connect `kubectl` to AKS.
+  - Login to ACR.
+  - Tag and push the existing MealOps Docker image.
+  - Create the Gemini API key Kubernetes Secret.
+  - Wait for the Deployment and LoadBalancer.
+- Added validation and status messages to the startup script.
+- Installed Argo CD on AKS.
+- Created an Argo CD Application for MealOps.
+- Connected Argo CD to the MealOps Git repository.
+- Configured Argo CD to automatically sync Kubernetes resources from Git.
+- Enabled automatic sync, self-healing, and pruning.
+- Tested GitOps synchronization by changing Kubernetes configuration in Git.
+- Tested drift detection by manually changing the number of Deployment replicas.
+- Updated the startup automation so Argo CD is responsible for deploying MealOps instead of `kubectl apply`.
+- Created separate `mealops-prod` and `mealops-dev` namespaces.
+- Restructured the Kubernetes manifests using Kustomize base and overlays.
+- Created separate Kustomize overlays for dev and prod.
+- Started configuring environment-specific Docker image versions.
+
+### What I learned
+- `$PSScriptRoot` is an automatic PowerShell variable that contains the directory path of the script that is currently running.
+- `Split-Path -Parent $PSScriptRoot` can be used to get the project root when the script is stored inside a `scripts` directory.
+- Terraform outputs are useful for connecting infrastructure automation with deployment automation instead of hard-coding Azure resource names.
+- `kubectl create ... --dry-run=client -o yaml | kubectl apply -f -` allows a resource such as a Secret to be created or updated idempotently.
+- If a Kubernetes Deployment starts a rollout but the Pods do not become Ready, the Deployment can eventually fail with `exceeded its progress deadline`.
+- After fixing a configuration problem that affected already-created Pods, a Deployment may need to be restarted with:
+  `kubectl rollout restart deployment mealops`
+  so Kubernetes creates new Pods with the corrected configuration.
+- `OutOfSync` means the live state in Kubernetes differs from the desired state stored in Git.
+- Automatic sync applies Git changes automatically.
+- `selfHeal` automatically restores resources when someone manually changes the Kubernetes cluster and causes it to differ from Git.
+- `prune` allows Argo CD to delete Kubernetes resources that were removed from Git.
+- Server-side apply can be used for large resources such as Argo CD CRDs to avoid the annotation size limit of client-side apply.
+- The `images` section in a Kustomize overlay can replace the image name and tag without changing the base `deployment.yaml`.
+- A dev Kubernetes environment is useful even when application code is tested locally because Kubernetes configuration changes still need a safe environment for testing.
+- Local Docker builds and CI builds have different purposes: local builds are for development/testing, while CI creates the official deployable artifact from committed code.
+- A good image strategy is to use the Git commit SHA as an immutable image tag, allowing me to know exactly which version of the application is running.
+
+### Challenges & Solutions
+
+- **Challenge:** The startup script calculated the wrong project path because `$PSScriptRoot` was initially handled incorrectly.
+  - **Solution:** Used `$PSScriptRoot` directly as the `scripts` directory and `Split-Path -Parent $PSScriptRoot` to reliably get the MealOps project root.
+
+- **Challenge:** The startup script could not read the AKS, ACR, and Resource Group names correctly.
+  - **Solution:** Read the resource names directly from `terraform output -raw` while the script was inside the correct `terraform/infra` directory instead of hard-coding them.
+
+- **Challenge:** The Deployment failed with `ProgressDeadlineExceeded` and the Pods did not become Ready.
+  - **Solution:** Investigated the Pod/Deployment state and found that the Secret name created by `start.ps1` did not match the Secret name referenced by the Deployment. Fixed the Secret name and restarted the Deployment so new Pods were created with the correct configuration.
+
+- **Challenge:** After fixing the configuration, the existing Pods were still part of the failed rollout.
+  - **Solution:** Used `kubectl rollout restart deployment mealops` to force Kubernetes to recreate the Pods and start a new rollout.
+
+- **Challenge:** Installing Argo CD failed with:
+
+  `metadata.annotations: Too long: may not be more than 262144 bytes`
+
+  for the `applicationsets.argoproj.io` CRD.
+  - **Solution:** Installed Argo CD using `kubectl apply --server-side`. Server-side apply lets the Kubernetes API server manage the apply operation and field ownership instead of storing the entire previous configuration in the large client-side `last-applied-configuration` annotation.
+
+- **Challenge:** Using the same mutable `latest` image for dev and prod would make it unclear which application version each environment is running.
+  - **Solution:** Decided that CI-built images will eventually use the Git commit SHA as the image tag, while Kustomize overlays will specify which exact image version each environment should run.
