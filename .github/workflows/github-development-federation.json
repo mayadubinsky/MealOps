@@ -1,9 +1,0 @@
-{
-  "name": "mealops-github-development",
-  "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:mayadubinsky@310131241/MealOps@1314875082:environment:development",
-  "description": "GitHub Actions OIDC for MealOps development environment",
-  "audiences": [
-    "api://AzureADTokenExchange"
-  ]
-}
