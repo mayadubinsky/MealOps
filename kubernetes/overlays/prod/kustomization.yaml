@@ -4,9 +4,9 @@ kind: Kustomization
 namespace: mealops-prod
 
 resources:
-  - ../../base
+- ../../base
 
 images:
-  - name: mealops
-    newName: mealopsacr12345.azurecr.io/mealops
-    newTag: bootstrap
+- name: mealops
+  newName: mealopsacr12345.azurecr.io/mealops
+  newTag: 5cb249e143c79fd75e9554ff21dc15e7e078fe3d
