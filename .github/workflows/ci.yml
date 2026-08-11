@@ -1,0 +1,146 @@
+name: MealOps CI
+
+on:
+  push:
+    branches:
+      - main
+      - "kan-*"
+    paths:
+      - "app/**"
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "app/**"
+
+permissions:
+  id-token: write
+  contents: write
+
+
+jobs:
+
+  # ==========================================================
+  # DEV
+  # ==========================================================
+
+  build-dev:
+    # Run only for kan-* branch pushes.
+    if: startsWith(github.ref, 'refs/heads/kan-')
+
+    runs-on: ubuntu-latest
+
+    # This makes GitHub issue an OIDC token with:
+    #
+    # repo:...:environment:development
+    #
+    # which matches the development federated credential
+    # we created in Azure.
+    environment: development
+
+    steps:
+
+      # Download the repository onto the GitHub runner.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # Authenticate GitHub Actions to Azure using OIDC.
+      #
+      # No client secret/password is used.
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+
+      # Authenticate Docker to Azure Container Registry.
+      #
+      # The Service Principal already has AcrPush permission.
+      - name: Login to ACR
+        run: |
+          az acr login --name mealopsacr12345
+
+
+      # Build the image from app/Dockerfile.
+      #
+      # The image tag is the Git commit SHA that triggered
+      # this workflow.
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t mealopsacr12345.azurecr.io/mealops:${{ github.sha }} \
+            ./app
+
+
+      # Push the exact commit-tagged image to ACR.
+      - name: Push Docker image to ACR
+        run: |
+          docker push mealopsacr12345.azurecr.io/mealops:${{ github.sha }}
+
+ 
+      # Push the main commit image to ACR.
+      - name: Push Docker image to ACR
+        run: |
+          docker push mealopsacr12345.azurecr.io/mealops:${{ github.sha }}
+
+      - name: Update dev image tag
+        run: |
+          cd kubernetes/overlays/dev
+          kustomize edit set image mealops=mealopsacr12345.azurecr.io/mealops:${{ github.sha }}
+
+      - name: Commit updated dev image tag
+        run: |
+          git  config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add kubernetes/overlays/dev/kustomization.yaml
+          git commit -m "Update dev image to ${{ github.sha }}" || exit 0
+          git push
+
+  # ==========================================================
+  # PROD
+  # ==========================================================
+
+  build-prod:
+    # Run only for a push directly to main.
+    #
+    # This prevents this job from running for kan-* branches
+    # or pull_request events.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # Download the repository onto the GitHub runner.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # Authenticate with Azure using the main-branch
+      # federated credential.
+      #
+      # There is NO environment: development here.
+      #
+      # Therefore GitHub's OIDC subject is based on:
+      #
+      # refs/heads/main
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+
+      # Authenticate Docker to ACR.
+      - name: Login to ACR
+        run: |
+          az acr login --name mealopsacr12345
+
+
+        =
