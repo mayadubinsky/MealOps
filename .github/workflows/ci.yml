@@ -74,6 +74,8 @@ jobs:
           docker build \
             -t mealopsacr12345.azurecr.io/mealops:${{ github.sha }} \
             ./app
+            -t mealopsacr12345.azurecr.io/mealops:${{ github.sha }} \
+            ./app
 
 
       # Push the exact commit-tagged image to ACR.
