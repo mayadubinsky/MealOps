@@ -16,7 +16,7 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 
 jobs:
@@ -139,3 +139,18 @@ jobs:
       - name: Push Docker image to ACR
         run: |
           docker push mealopsacr12345.azurecr.io/mealops:${{ github.sha }}
+
+      - name: Update dev image tag
+        run: |
+          cd kubernetes/overlays/dev
+          kustomize edit set image mealops=mealopsacr12345.azurecr.io/mealops:${{ github.sha }}
+
+      - name: Commit updated dev image tag
+        run: |
+          git  config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add kubernetes/overlays/dev/kustomization.yaml
+          git commit -m "Update dev image to ${{ github.sha }}" || exit 0
+          git push
+          
