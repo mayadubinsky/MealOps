@@ -1,16 +1,9 @@
-name: MealOps CI
+name: Promote Dev
 
 on:
   push:
     branches:
-      - main
       - "kan-*"
-    paths:
-      - "app/**"
-
-  pull_request:
-    branches:
-      - main
     paths:
       - "app/**"
 
@@ -20,11 +13,6 @@ permissions:
 
 
 jobs:
-
-  # ==========================================================
-  # DEV
-  # ==========================================================
-
   build-dev:
     # Run only for kan-* branch pushes.
     if: startsWith(github.ref, 'refs/heads/kan-')
@@ -74,15 +62,8 @@ jobs:
           docker build \
             -t mealopsacr12345.azurecr.io/mealops:${{ github.sha }} \
             ./app
-
-
-      # Push the exact commit-tagged image to ACR.
-      - name: Push Docker image to ACR
-        run: |
-          docker push mealopsacr12345.azurecr.io/mealops:${{ github.sha }}
-
  
-      # Push the main commit image to ACR.
+      # Push the commit image to ACR.
       - name: Push Docker image to ACR
         run: |
           docker push mealopsacr12345.azurecr.io/mealops:${{ github.sha }}
@@ -101,46 +82,3 @@ jobs:
           git commit -m "Update dev image to ${{ github.sha }}" || exit 0
           git push
 
-  # ==========================================================
-  # PROD
-  # ==========================================================
-
-  build-prod:
-    # Run only for a push directly to main.
-    #
-    # This prevents this job from running for kan-* branches
-    # or pull_request events.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    runs-on: ubuntu-latest
-
-    steps:
-
-      # Download the repository onto the GitHub runner.
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-
-      # Authenticate with Azure using the main-branch
-      # federated credential.
-      #
-      # There is NO environment: development here.
-      #
-      # Therefore GitHub's OIDC subject is based on:
-      #
-      # refs/heads/main
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-
-      # Authenticate Docker to ACR.
-      - name: Login to ACR
-        run: |
-          az acr login --name mealopsacr12345
-
-
-        =
