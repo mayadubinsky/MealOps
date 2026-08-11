@@ -1,0 +1,34 @@
+name: Promote image to production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag / commit SHA to promote to production"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+  
+      - name: Update production image tag
+        run: |
+          cd kubernetes/overlays/prod
+          kustomize edit set image mealops=mealopsacr12345.azurecr.io/mealops:${{ inputs.image_tag }}
+
+      - name: Commit production image update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add kubernetes/overlays/prod/kustomization.yaml
+          git commit -m "Promote image ${{ inputs.image_tag }} to production"
+          git push
+
