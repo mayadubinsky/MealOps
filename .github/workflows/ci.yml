@@ -143,20 +143,4 @@ jobs:
           az acr login --name mealopsacr12345
 
 
-      # Build the image from the exact commit that exists
-      # on main.
-      - name: Build Docker image
-        run: |
-          docker build \
-            -t mealopsacr12345.azurecr.io/mealops:${{ github.sha }} \
-            ./app
-
-      - name: Commit updated dev image tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add kubernetes/overlays/prod/kustomization.yaml
-          git commit -m "Update prod image to ${{ github.sha }}" || exit 0
-          git push
-
+        =
